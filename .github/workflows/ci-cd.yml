@@ -1,0 +1,62 @@
+
+name: Customer Churn CI-CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Get project source code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Install dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Train the machine learning model
+      - name: Train Model
+        run: python train.py
+
+      # 5. Run automated tests
+      - name: Run Tests
+        run: python -m pytest -v
+
+      # 6. Build Docker image on main branch push
+      - name: Build Docker Image
+        if: github.event_name == 'push'
+        run: docker build -t churn-app .
+
+      # 7. Login to GitHub Container Registry
+      - name: Login to GHCR
+        if: github.event_name == 'push'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # 8. Push Docker image
+      - name: Push Docker Image
+        if: github.event_name == 'push'
+        run: |
+          IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}
+          docker tag churn-app $IMAGE:latest
+          docker tag churn-app $IMAGE:${GITHUB_SHA}
+          docker push $IMAGE:latest
+          docker push $IMAGE:${GITHUB_SHA}
